@@ -1,0 +1,3 @@
+[submodule "system/extras/fuse"]
+	path = system/extras/fuse
+	url = https://github.com/cyanogen/android_external_fuse.git
