@@ -7,10 +7,6 @@ int open_fs_db(sqlite3 **db)
    return sqlite3_open(DB_FILENAME, db);
 }
 
-int init_fs_db(sqlite3 **db)
-{
-}
-
 int add_file(sqlite3 **db, char *filename, char *path)
 {
 }
