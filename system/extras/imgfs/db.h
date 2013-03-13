@@ -1,5 +1,5 @@
-#ifndef DB_OPS_H
-#define DB_OPS_H
+#ifndef __DB_H__
+#define __DB_H__
 
 #include <sqlite3.h>
 
