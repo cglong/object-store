@@ -1,18 +1,13 @@
-/*
-    FUSE: Filesystem in Userspace
-    Copyright (C) 2001-2005  Miklos Szeredi <miklos@szeredi.hu>
-
-    This program can be distributed under the terms of the GNU GPL.
-    See the file COPYING.
-*/
-
 #include <fuse.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include "db.h"
 
 #define FUSE_USE_VERSION 22
+
+sqlite3 *db = NULL;
 
 static int imgfs_getattr(const char *path, struct stat *stbuf)
 {
@@ -67,5 +62,6 @@ static struct fuse_operations imgfs_oper = {
 
 int main(int argc, char *argv[])
 {
+	open_fs_db(&db);
     return fuse_main(argc, argv, &imgfs_oper);
 }
