@@ -33,12 +33,17 @@
 #include <fuse.h>
 #include <libgen.h>
 #include <limits.h>
+#include <sqlite3.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+
+char curpath[200] = "";
+sqlite3 *handle;
 
 // Report errors to logfile and give -errno to caller
 static int bb_error(char *str)
@@ -76,12 +81,55 @@ int bb_getattr(const char *path, struct stat *statbuf)
 {
     int retstat = 0;
     char fpath[PATH_MAX];
+    char fpath2[PATH_MAX];
     
     bb_fullpath(fpath, path);
     
-    retstat = lstat(fpath, statbuf);
-    if (retstat != 0)
-	retstat = bb_error("bb_getattr lstat");
+    if (strstr(fpath, ".jpg") == NULL) {
+		statbuf->st_mode = S_IFDIR | 0755;
+		statbuf->st_nlink = 2;
+	} else {
+		sqlite3_stmt *stmt;
+		int i = 0;
+		char select_query[200];
+		char *filename = NULL;
+		if (i == 0)
+			sprintf(select_query, "SELECT pathName from files where fname='%s'", curpath);
+		
+		int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
+		if (retval)
+			return -1;
+		
+		int cols = sqlite3_column_count(stmt);
+		
+		while (1) {
+			retval = sqlite3_step(stmt);
+			if (retval == SQLITE_ROW) {
+				int col;
+				for (col = 0; col < cols; col++) {
+					const char *val = (const char *) sqlite3_column_text(stmt, col);
+					sprintf(fpath2, "%s/%s", curpath, val);
+					if (strcmp(fpath2, path) == 0)
+						filename = val;
+				}
+			} else if (retval == SQLITE_DONE)
+				break;
+			else
+				return -1;
+		}
+		
+		char path2[400];
+		strcpy(path2, path);
+		
+		if (filename != NULL)
+			sprintf(path, "/%s", filename);
+		
+		bb_fullpath(fpath, path);
+    
+		retstat = lstat(fpath, statbuf);
+		if (retstat != 0)
+		retstat = bb_error("bb_getattr lstat");
+	}
     
     return retstat;
 }
@@ -174,14 +222,76 @@ int bb_unlink(const char *path)
 {
     int retstat = 0;
     char fpath[PATH_MAX];
+    char fpath2[PATH_MAX];
     
     bb_fullpath(fpath, path);
     
-    retstat = unlink(fpath);
-    if (retstat < 0)
-	retstat = bb_error("bb_unlink unlink");
-    
-    return retstat;
+    if (strstr(fpath, ".jpg") == NULL)
+		retstat = bb_error("bb_unlink unlink");
+	else {
+		sqlite3_stmt *stmt;
+		int i = 0;
+		char select_query[200];
+		char *filename;
+		if (i == 0)
+			sprintf(select_query, "SELECT pathName from files where fname='%s'", curpath);
+		
+		int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0;
+		if (retval)
+			return -1;
+		
+		int cols = sqlite3_column_count(stmt);
+		
+		while (1) {
+			retval = sqlite3_step(stmt);
+			if (retval == SQLITE_ROW) {
+				int col;
+				for (col = 0; col < cols; col++) {
+					const char *val = (const char *) sqlite3_column_text(stmt, col);
+					sprintf(fpath2, "%s/%s", curpath, val);
+					if (strcmp(fpath2, path) == 0)
+						filename = val;
+				}
+			} else if (retvale == SQLITE_DONE)
+				break;
+			else
+				return -1;
+		}
+		
+		sprintf(path, "/%s", filename);
+		bb_fullpath(fpath, path);
+		retstat = unlink(fpath);
+		if (retstat < 0)
+			retstat = bb_error("bb_getxattr lstat");
+		else {
+			if (i == 0)
+				sprintf(select_query, "delete from files where pathName='%s' AND fname='%s'", filename, curpath);
+			
+			int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
+			if (retval)
+				return -1;
+			
+			int cols = sqlite3_column_count(stmt);
+			
+			while (1) {
+				retval = sqlite3_step(stmt);
+				if (retval == SQLITE_ROW) {
+					int col;
+					for (col = 0; col < cols; col++) {
+						const char *val = (const char *) sqlite3_column_text(stmt, col);
+						sprintf(fpath2, "%s/%s", curpath, val);
+						if (strcmp(fpath2, path) == 0)
+							filename = val;
+					}
+				} else if (retval == SQLITE_DONE)
+					break;
+				else
+					return -1;
+			}
+		}
+	}
+	
+	return retstat;
 }
 
 /** Remove a directory */
@@ -329,14 +439,22 @@ int bb_open(const char *path, struct fuse_file_info *fi)
     int retstat = 0;
     int fd;
     char fpath[PATH_MAX];
+    char fpath2[PATH_MAX];
     
-    bb_fullpath(fpath, path);
+    sqlite3_stmt *stmt;
+    char select_query[200];
     
-    fd = open(fpath, fi->flags);
-    if (fd < 0)
-	retstat = bb_error("bb_open open");
-    
-    fi->fh = fd;
+    char *filename = NULL;
+    filename = path + strlen(curpath) + 1;
+    if (filename != NULL)
+		sprintf(path, "/%s", filename);
+	bb_fullpath(fpath, path);
+	
+	fd = open(fpath, fi->flags);
+	if (fd < 0)
+		retstat = bb_error("bb_open open");
+	
+	fi->fh = fd;
     
     return retstat;
 }
@@ -458,6 +576,9 @@ int bb_flush(const char *path, struct fuse_file_info *fi)
 int bb_release(const char *path, struct fuse_file_info *fi)
 {
     int retstat = 0;
+    char fpath[PATH_MAX];
+    bb_fullpath(fpath, path);
+    chmod(fpath, 0755);
 
     // We need to close the file.  Had we allocated any resources
     // (buffers etc) we'd need to free them here as well.
@@ -508,12 +629,47 @@ int bb_getxattr(const char *path, const char *name, char *value, size_t size)
 {
     int retstat = 0;
     char fpath[PATH_MAX];
+    char fpath2[PATH_MAX];
     
     bb_fullpath(fpath, path);
     
-    retstat = lgetxattr(fpath, name, value, size);
-    if (retstat < 0)
-	retstat = bb_error("bb_getxattr lgetxattr");
+    if (strstr(fpath, ".jpg") != NULL) {
+		sqlite3_stmt *stmt;
+		int i = 0;
+		char select_query[200];
+		char *filename;
+		if (i == 0)
+			sprintf(select_query, "SELECT pathName from files where fname='%s'", curpath);
+		
+		int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
+		if (retval)
+			return -1;
+		
+		int cols = sqlite3_column_count(stmt);
+		
+		while (1) {
+			retval = sqlite3_step(stmt);
+			if (retval == SQLITE_ROW) {
+				int col;
+				for (col = 0; col < cols; col++) {
+					const char *val = (const char *) sqlite3_column_text(stmt, col);
+					sprintf(fpath2, "%s/%s", curpath, val);
+					if (strcmp(fpath2, path) == 0)
+						filename = val;
+				}
+			} else if (retval == SQLITE_DONE)
+				break;
+			else
+				return -1;
+		}
+		
+		sprintf(path, "/%s", filename);
+		bb_fullpath(fpath, path);
+		retstat = lgetxattr(fpath, name, value, size);
+		
+		if (retstat < 0)
+			retstat = bb_error("bb_getxattr lgetxattr");
+	}
     
     return retstat;
 }
@@ -558,18 +714,7 @@ int bb_removexattr(const char *path, const char *name)
  */
 int bb_opendir(const char *path, struct fuse_file_info *fi)
 {
-    DIR *dp;
     int retstat = 0;
-    char fpath[PATH_MAX];
-    
-    bb_fullpath(fpath, path);
-    
-    dp = opendir(fpath);
-    if (dp == NULL)
-	retstat = bb_error("bb_opendir opendir");
-    
-    fi->fh = (intptr_t) dp;
-    
     return retstat;
 }
 
@@ -600,29 +745,35 @@ int bb_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset
     int retstat = 0;
     DIR *dp;
     struct dirent *de;
+    char select_query[200];
+    sqlite3_stmt *stmt;
     
-    // once again, no need for fullpath -- but note that I need to cast fi->fh
-    dp = (DIR *) (uintptr_t) fi->fh;
-
-    // Every directory contains at least two entries: . and ..  If my
-    // first call to the system readdir() returns NULL I've got an
-    // error; near as I can tell, that's the only condition under
-    // which I can get an error from readdir()
-    de = readdir(dp);
-    if (de == 0) {
-	retstat = bb_error("bb_readdir readdir");
-	return retstat;
-    }
-
-    // This will copy the entire directory into the buffer.  The loop exits
-    // when either the system readdir() returns NULL, or filler()
-    // returns something non-zero.  The first case just means I've
-    // read the whole directory; the second means the buffer is full.
-    do {
-	if (filler(buf, de->d_name, NULL, 0) != 0) {
-	    return -ENOMEM;
+    int i = 0;
+    if (i == 0)
+		sprintf(select_query, "SELECT pathName from files where fname='%s'", path);
+	
+	int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
+	if (retval)
+		return -1;
+	
+	int cols = sqlite3_column_count(stmt);
+	
+	while (1) {
+		retval = sqlite3_step(stmt);
+		if (retval == SQLITE_ROW) {
+			int col;
+			for (col = 0; col < cols; col++) {
+				const char *val = (const char *) sqlite_column_text(stmt, col);
+				filler(buf, val, NULL, 0);
+			}
+		} else if (retval == SQLITE_DONE)
+			break;
+		else
+			return -1;
 	}
-    } while ((de = readdir(dp)) != NULL);
+	
+	filler(buf, ".", NULL, 0);
+	filler(buf, "..", NULL, 0);
     
     return retstat;
 }
@@ -704,13 +855,34 @@ int bb_access(const char *path, int mask)
 {
     int retstat = 0;
     char fpath[PATH_MAX];
-   
-    bb_fullpath(fpath, path);
+    int exists = 0;
     
-    retstat = access(fpath, mask);
-    
-    if (retstat < 0)
-	retstat = bb_error("bb_access access");
+    if (strstr(path, ".") == NULL) {
+		strcpy(curpath, path);
+	}
+	
+	sqlite3_stmt *stmt;
+	char select_query[200];
+	sprintf(select_query, "SELECT pathName from files where fname='%s'", curpath);
+	
+	int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
+	if (retval)
+		return -1;
+	
+	int cols = sqlite3_column_count(stmt);
+	
+	while (1) {
+		retval = sqlite3_step(stmt);
+		if (retval == SQLITE_ROW)
+			exists = 1;
+		else if (retval == SQLITE_DONE)
+			break;
+		else
+			return -1;
+	}
+	
+	if (exists != 1)
+		retstat = bb_error("bb_access access");
     
     return retstat;
 }
@@ -731,15 +903,25 @@ int bb_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     int retstat = 0;
     char fpath[PATH_MAX];
+    char fpath2[PATH_MAX];
     int fd;
     
-    bb_fullpath(fpath, path);
+    sqlite3_stmt *stmt;
+    int i = 0;
+    char select_query[200];
+    char *filename = NULL;
     
-    fd = creat(fpath, mode);
-    if (fd < 0)
-	retstat = bb_error("bb_create creat");
-    
-    fi->fh = fd;
+    char path2[200];
+    filename = path + strlen(curpath) + 1;
+    if (filename != NULL)
+		sprintf(path2, "/%s", filename);
+	bb_fullpath(fpath, path);
+	
+	fd = open(fpath, fi->flags);
+	if (fd < 0)
+		retstat = bb_error("bb_open open");
+	
+	fi->fh = fd;
     
     return retstat;
 }
@@ -879,10 +1061,46 @@ int main(int argc, char *argv[])
     argv[argc-1] = NULL;
     argc--;
     
+    int sql_return = sqlite3_create(bb_data);
+    if (sql_return < 0) {
+		printf("Database initialization failed\n");
+		exit(1);
+	}
+    
     // turn over control to fuse
     fprintf(stderr, "about to call fuse_main\n");
     fuse_stat = fuse_main(argc, argv, &bb_oper, bb_data);
     fprintf(stderr, "fuse_main returned %d\n", fuse_stat);
     
     return fuse_stat;
+}
+
+int sqlite3_create(struct bb_state *bb_data) {
+	int retval;
+	
+	int query_count = 5, query_size = 150, ind = 0;
+	char **queries = malloc(sizeof(char) * query_count * query_size);
+	
+	sqlite3_stmt *stmt;
+	
+	char *sqlite_location = malloc(sizeof(char*) * 50);
+	strcpy(sqlite_location, bb_data->rootdir);
+	strcat(sqlite_location, "/.imgdb.sqlite3");
+	retval = sqlite3_open(sqlite_location, &handle);
+	
+	if (retval)
+		return -1;
+	
+	char create_table[200] = "CREATE TABLE IF NOT EXISTS files (fname TEXT, longitude DOUBLE, latitude DOUBLE, private INTEGER, pathName TEXT, PRIMARY KEY(fname, pathName))";
+	
+	retval = sqlite3_exec(handle, create_table, 0, 0, 0);
+	if (retval)
+		return -1;
+	
+	retval = sqlite3_exec(handle, create_table, 0, 0, 0);
+	if (retval)
+		return -1;
+	
+	free(queries);
+	return retval;
 }
