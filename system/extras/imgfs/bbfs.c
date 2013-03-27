@@ -24,8 +24,6 @@
   gcc -Wall `pkg-config fuse --cflags --libs` -o bbfs bbfs.c
 */
 
-#include "params.h"
-
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -41,6 +39,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+
+#include "exif.h"
+#include "params.h"
 
 char curpath[200] = "";
 sqlite3 *handle;
@@ -579,6 +580,9 @@ int bb_release(const char *path, struct fuse_file_info *fi)
     char fpath[PATH_MAX];
     bb_fullpath(fpath, path);
     chmod(fpath, 0755);
+    
+    if (strstr(path + 1, "/") == NULL)
+		sort_file(path);
 
     // We need to close the file.  Had we allocated any resources
     // (buffers etc) we'd need to free them here as well.
@@ -1091,7 +1095,7 @@ int sqlite3_create(struct bb_state *bb_data) {
 	if (retval)
 		return -1;
 	
-	char create_table[200] = "CREATE TABLE IF NOT EXISTS files (fname TEXT, longitude DOUBLE, latitude DOUBLE, private INTEGER, pathName TEXT, PRIMARY KEY(fname, pathName))";
+	char create_table[200] = "CREATE TABLE IF NOT EXISTS files (fname TEXT, longitude DOUBLE, latitude DOUBLE, pathName TEXT, PRIMARY KEY(fname, pathName))";
 	
 	retval = sqlite3_exec(handle, create_table, 0, 0, 0);
 	if (retval)
@@ -1103,4 +1107,47 @@ int sqlite3_create(struct bb_state *bb_data) {
 	
 	free(queries);
 	return retval;
+}
+
+int sqlite3_add_file(char *filename, char *latitude, char *longitude, char *path)
+{
+	int retval;
+	char **addfile_query = malloc(sizeof(char) * 500);
+	
+	sprintf(addfile_query, "INSERT INTO files VALUES('%s','%s','%s','%s')", filename, latitude, longitude, path);
+	
+	retval = sqlite3_exec(handle, addfile_query, 0, 0, 0);
+	
+	free(addfile_query);
+	return retval ? -1 : 0;
+}
+
+int sort_file(char path[])
+{
+	char fpath[PATH_MAX];
+	char fpath2[PATH_MAX];
+	char fpath3[PATH_MAX];
+	char fpath4[PATH_MAX];
+	
+	bb_fullpath(fpath, path);
+	bb_fullpath(fpath3, "/");
+	
+	char latitude[1024];
+	char longitude[1024];
+	get_latitude(fpath, latitude);
+	get_longitude(fpath, longitude);
+	
+	sprintf(fpath2, "/%s", latitude);
+	int retval = sqlite3_add_file("/", latitude, 0, latitude);
+	if (retval)
+		return -1;
+	
+	strcpy(fpath3, fpath2);
+	sprintf(fpath2, "%s/%s", fpath2, longitude);
+	retval = sqlite3_add_file(fpath3, latitude, longitude, longitude);
+	if (retval)
+		return -1;
+	
+	retval = sqlite3_add_file(fpath2, latitude, longitude, path+1);
+	return retval ? -1 : 0;
 }
