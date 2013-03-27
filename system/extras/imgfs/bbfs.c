@@ -31,7 +31,7 @@
 #include <fuse.h>
 #include <libgen.h>
 #include <limits.h>
-#include "../../../external/sqlite/dist/sqlite3.h"
+#include "sqlite3.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -39,6 +39,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+
+#include <sys/vfs.h>
+#define statvfs statfs
 
 #include "exif.h"
 #include "params.h"
@@ -767,7 +770,7 @@ int bb_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset
 		if (retval == SQLITE_ROW) {
 			int col;
 			for (col = 0; col < cols; col++) {
-				const char *val = (const char *) sqlite_column_text(stmt, col);
+				const char *val = (const char *) sqlite3_column_text(stmt, col);
 				filler(buf, val, NULL, 0);
 			}
 		} else if (retval == SQLITE_DONE)

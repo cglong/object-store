@@ -2,10 +2,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <libexif/exif-data.h>
+#include "exif-data.h"
 #include <string.h>
 
-#include "exif_ops.h"
+#include "exif.h"
 
 static const int BUFFER_SIZE = 1024;
 
