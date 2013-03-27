@@ -31,7 +31,7 @@
 #include <fuse.h>
 #include <libgen.h>
 #include <limits.h>
-#include <sqlite3.h>
+#include "../../../external/sqlite/dist/sqlite3.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -237,7 +237,7 @@ int bb_unlink(const char *path)
 		if (i == 0)
 			sprintf(select_query, "SELECT pathName from files where fname='%s'", curpath);
 		
-		int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0;
+		int retval = sqlite3_prepare(handle, select_query, -1, &stmt, 0);
 		if (retval)
 			return -1;
 		
@@ -253,7 +253,7 @@ int bb_unlink(const char *path)
 					if (strcmp(fpath2, path) == 0)
 						filename = val;
 				}
-			} else if (retvale == SQLITE_DONE)
+			} else if (retval == SQLITE_DONE)
 				break;
 			else
 				return -1;
